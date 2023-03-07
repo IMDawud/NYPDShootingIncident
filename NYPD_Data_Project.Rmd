@@ -1,0 +1,209 @@
+---
+title: 'NYPD Shooting Incidents '
+author: "I. Dawud"
+date: "2023-03-03"
+output:
+  pdf_document: default
+  html_document: default
+---
+***
+
+This document will analyze a list of shooting incidents that occurred in New York City starting in 2006 till 2021. Data is collected manually and reviewed by the Office of Management Analysis and Planning before it is posted to the NYPD website. The data being used today is from data.gov and is allowed for public access and use. 
+
+
+
+# **Importing Libraries**
+***
+```{r import_libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(chron)
+
+```
+
+
+
+# **Loading and Importing Data**
+***
+Reading from a csv file from the cityofnewyork website and importing it into NYPDdata table.
+```{r get_NYPD_data}
+NYPDFile = "NYPDdata.csv"
+
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+```
+
+```{r import_data}
+NYPDdata <- read.csv(url_in)
+summary(NYPDdata)
+
+```
+
+# **Clean Up Data**
+***
+Remove unnecessary columns and define it as another dataframe JURISDICTION_CODE,X_COORD_CD,Y_COORD_CD,Latitude,Longitude,INCIDENT_KEY,Lon_Lat. I also need to make sure to replace missing spaces with NA in order to make sure I do not have incorrect analysis.  
+```{r clean_up_data}
+# Remove unnecessary columns and define it as another dataframe JURISDICTION_CODE,X_COORD_CD,Y_COORD_CD,Latitude,Longitude,INCIDENT_KEY,OCCUR_DATE,OCCUR_TIME,Lon_Lat
+
+NYPDdata_cleaned <- subset(NYPDdata, select = -c(JURISDICTION_CODE,X_COORD_CD,Y_COORD_CD,Latitude,Longitude,INCIDENT_KEY,Lon_Lat))
+
+#There's a lot of missing data , replacing all the missing space with NA (Non applicable). 
+        
+NYPDdata_cleaned <- replace(NYPDdata_cleaned, NYPDdata_cleaned=='1020', NA)
+NYPDdata_cleaned <- replace(NYPDdata_cleaned, NYPDdata_cleaned=='224', NA)
+NYPDdata_cleaned <- replace(NYPDdata_cleaned, NYPDdata_cleaned=='940', NA)
+
+
+NYPDdata_cleaned <- replace(NYPDdata_cleaned, NYPDdata_cleaned=='', NA)
+NYPDdata_cleaned <- replace(NYPDdata_cleaned, NYPDdata_cleaned=='UNKNOWN', NA)
+NYPDdata_cleaned <- replace(NYPDdata_cleaned, NYPDdata_cleaned=='U', NA)
+
+
+summary(NYPDdata_cleaned)
+```
+# **Investigations**
+***
+### **Investigation 1**
+
+What brououghs suffer from the most shootings since 2006?
+
+```{r Investigation_1}
+NYPD_by_boro <- NYPDdata_cleaned %>%
+  group_by(BORO) %>%
+  summarize(Total_Incidents=n(),
+            .groups = 'drop')
+NYPD_by_boro
+
+
+g <- ggplot(NYPDdata_cleaned, aes(x = BORO)) +
+  geom_bar() +
+  labs(title = "Boroughs of New York",
+       x = "Boroughs",
+       y = "Total Incidents") +
+  theme_classic()
+g
+
+
+```
+
+##### **Conclusion**
+* We can see that Brooklyn is number one in the number of incidents that have occured. Staten Island shows to have the least reported incidents.  
+
+
+
+### **Investigation 2**
+***
+Who are the victims being targeted in these incidents? Who are the perpetrators?
+```{r Investigation_2}
+NYPD_perp_race <- NYPDdata_cleaned %>%
+  group_by(PERP_RACE) %>%
+  summarize(Total=n(),
+            .groups = 'drop')
+NYPD_perp_race
+
+NYPD_vic_race <- NYPDdata_cleaned %>%
+  group_by(VIC_RACE) %>%
+  summarize(Total=n(),
+            .groups = 'drop')
+
+NYPD_vic_race
+
+
+
+g <- ggplot(NYPDdata_cleaned, aes(y = VIC_RACE)) +
+  geom_bar() +
+  labs(title = "Race of Victims",
+       y = "Race",
+       x = "Total Incidents") +
+  theme_classic()
+g
+
+
+g <- ggplot(NYPDdata_cleaned, aes(y = PERP_RACE)) +
+  geom_bar() +
+  labs(title = "Race of Perpetrators",
+       y = "Race",
+       x = "Total Incidents") +
+  theme_classic()
+g
+
+
+
+
+
+```
+
+```{r Model}
+
+model <- glm(as.factor(STATISTICAL_MURDER_FLAG) ~ as.factor(PERP_RACE) + as.factor(VIC_RACE), data = NYPDdata_cleaned, family = binomial)
+summary(model)
+
+```
+
+##### **Conclusion**
+* Looking at this data, we can see that the race of the victims tends to be Black, followed by White/Hispanic. The Race of the perpetrators reported is shown to be black with a good majority also being NA.However, with further analysis using a generalized linear model, I found that there was no correlation between the perpetrators race and if they committed murder.
+
+
+
+
+
+### **Investigation 3**
+***
+What time of day are shootings occuring?
+```{r Investigation_3}
+
+# Need to be able to first clean the data, find what day of the month an incident occurs, then convert that to a week day.
+NYPDdata_cleaned$OCCUR_DAY <- mdy(NYPDdata_cleaned$OCCUR_DATE) #Day of the month
+NYPDdata_cleaned$OCCUR_DAY <- wday(NYPDdata_cleaned$OCCUR_DAY, label = TRUE) #Day of the week
+
+NYPDdata_cleaned$OCCUR_TIME <- hour(hms(as.character(NYPDdata_cleaned$OCCUR_TIME))) #Hour of a day
+
+summary(NYPDdata_cleaned)
+
+NYPD_time_of_day <- NYPDdata_cleaned %>%
+  group_by(OCCUR_TIME) %>%
+  count()
+
+NYPD_day_of_week <- NYPDdata_cleaned %>%
+  group_by(OCCUR_DAY) %>%
+  count()
+
+
+g <- ggplot(NYPD_time_of_day, aes(x = OCCUR_TIME, y = n)) +
+  geom_col() +
+  labs(title = "Incidents During Different Times of the Day", 
+       x = "Time of Day", 
+       y = "Number of Incidents") +
+  theme_classic()
+g
+
+
+g <- ggplot(NYPD_day_of_week, aes(x = OCCUR_DAY, y = n)) +
+  geom_col() +
+  labs(title = "Incidents During the Week",
+       x = "Days of the Week",
+       y = "Number of Incidents") +
+  theme_classic()
+
+g
+
+
+```
+
+
+
+##### **Conclusion**
+* Based on the time of day, we can see that it is more likely for an incident to occur late at night, being especially high 6pm and 4am. We can also see that during the week, Saturday and Sunday are the prominent days for these incidents to occur. What is somewhat surprising is seeing that Monday is higher than Friday with the reportings.  
+
+####
+
+
+
+# **Bias**
+***
+Within this topic, implicit bias and discrimination can occur. I personally have never been to New York City or really know any of the borough's all that well except for what I see on tv. I do know that me being a minority, I have a certain perspective of the world based on public media, having seen what has occured to various minority groups throughout history especially when dealing with police. There are also other forms of bias in that the data set I have used has some missing areas that are considered Unknown or NA which can skew the data in various ways. Making sure to clean up the data and remove any lines that are missing data is vital to my analysis. Having the ability to take this data and reveal what truly happens in the world is far more valuable then opinions not being driven by facts.
+
+
+
+###
+
